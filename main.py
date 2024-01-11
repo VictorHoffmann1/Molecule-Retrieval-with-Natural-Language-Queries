@@ -3,12 +3,12 @@ from torch_geometric.data import DataLoader
 from torch.utils.data import DataLoader as TorchDataLoader
 from Model import Model
 import numpy as np
-from transformers import AutoTokenizer
 import torch
 from torch import optim
 import time
 import os
 import pandas as pd
+from transformers import AutoTokenizer
 
 CE = torch.nn.CrossEntropyLoss()
 def contrastive_loss(v1, v2):
@@ -24,14 +24,14 @@ train_dataset = GraphTextDataset(root='./data/', gt=gt, split='train', tokenizer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-nb_epochs = 5
+nb_epochs = 40
 batch_size = 32
 learning_rate = 2e-5
 
 val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-model = Model(num_node_features=300, nhid_gat=300, graph_hidden_channels=300, num_head_gat=8, ntoken=tokenizer.vocab_size, num_head_text=8, nhid_text=512, nlayers_text=8, dropout=0.3) # nout = bert model hidden dim
+model = Model(num_node_features=300, nhid_gat=300, graph_hidden_channels=300, num_head_gat=8, ntoken=tokenizer.vocab_size, num_head_text=8, nhid_text=512, nlayers_text=8, dropout=0.3)
 model.to(device)
 
 optimizer = optim.AdamW(model.parameters(), lr=learning_rate,
@@ -52,14 +52,14 @@ for i in range(nb_epochs):
     for batch in train_loader:
         input_ids = batch.input_ids
         batch.pop('input_ids')
-        attention_mask = batch.attention_mask
         batch.pop('attention_mask')
+        attn_mask = model.text_encoder.generate_square_subsequent_mask(input_ids.size(0)).to(device)
         graph_batch = batch
 
         x_graph, x_text = model(graph_batch.to(device),
                                 input_ids.to(device),
-                                attention_mask.to(device))
-        current_loss = contrastive_loss(x_graph, x_text)   
+                                attn_mask.to(device))
+        current_loss = contrastive_loss(x_graph, x_text)
         optimizer.zero_grad()
         current_loss.backward()
         optimizer.step()
@@ -77,12 +77,12 @@ for i in range(nb_epochs):
     for batch in val_loader:
         input_ids = batch.input_ids
         batch.pop('input_ids')
-        attention_mask = batch.attention_mask
+        attn_mask = model.text_encoder.generate_square_subsequent_mask(input_ids.size(0)).to(device)
         batch.pop('attention_mask')
         graph_batch = batch
         x_graph, x_text = model(graph_batch.to(device), 
                                 input_ids.to(device), 
-                                attention_mask.to(device))
+                                attn_mask.to(device))
         current_loss = contrastive_loss(x_graph, x_text)   
         val_loss += current_loss.item()
     best_validation_loss = min(best_validation_loss, val_loss)
@@ -123,8 +123,10 @@ for batch in test_loader:
 test_text_loader = TorchDataLoader(test_text_dataset, batch_size=batch_size, shuffle=False)
 text_embeddings = []
 for batch in test_text_loader:
-    for output in text_model(batch['input_ids'].to(device), 
-                             attention_mask=batch['attention_mask'].to(device)):
+    input_ids = batch['input_ids']
+    attn_mask = model.text_encoder.generate_square_subsequent_mask(input_ids.size(0))
+    for output in text_model(input_ids.to(device), 
+                             attn_mask.to(device)):
         text_embeddings.append(output.tolist())
 
 
