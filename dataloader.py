@@ -15,7 +15,7 @@ class GraphTextDataset(Dataset):
         self.description = pd.read_csv(os.path.join(self.root, split+'.tsv'), sep='\t', header=None)   
         self.description = self.description.set_index(0).to_dict()
         self.cids = list(self.description[1].keys())
-        
+        self.data_cache = {}  # Dictionary to store loaded data
         self.idx_to_cid = {}
         i = 0
         for cid in self.cids:
@@ -74,16 +74,25 @@ class GraphTextDataset(Dataset):
                                    add_special_tokens=True,)
             edge_index, x = self.process_graph(raw_path)
             data = Data(x=x, edge_index=edge_index, input_ids=text_input['input_ids'], attention_mask=text_input['attention_mask'])
-
             torch.save(data, osp.join(self.processed_dir, 'data_{}.pt'.format(cid)))
             i += 1
 
     def len(self):
-        return len(self.processed_file_names)
+        return len(self.cids)
 
     def get(self, idx):
+        if idx in self.data_cache:
+            # Return cached data if it's already loaded
+            return self.data_cache[idx]
+
+        # Load the data from the disk
         data = torch.load(osp.join(self.processed_dir, 'data_{}.pt'.format(self.idx_to_cid[idx])))
+
+        # Cache the loaded data
+        self.data_cache[idx] = data
+        
         return data
+
 
     def get_cid(self, cid):
         data = torch.load(osp.join(self.processed_dir, 'data_{}.pt'.format(cid)))
