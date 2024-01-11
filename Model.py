@@ -75,7 +75,7 @@ class TextEncoder(nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, nlayers)
         self.nhid = nhid
         self.init_weights()
-
+        
     def generate_square_subsequent_mask(self, sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
         mask = (
@@ -89,21 +89,23 @@ class TextEncoder(nn.Module):
         initrange = 0.1
         self.encoder.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src, src_mask):
+    def forward(self, src, src_mask = None, src_key_padding_mask = None):
         src = self.encoder(src) * math.sqrt(self.nhid)
         src = self.pos_encoder(src)
-        output = self.transformer_encoder(src, src_mask)
+        src = self.transformer_encoder(src, src_mask, src_key_padding_mask = src_key_padding_mask)
+        attention_weights = F.softmax(src, dim=1)  # Apply softmax along sentence_length dimension
+        output = torch.sum(attention_weights * src, dim=1)
         return output
 
 class Model(nn.Module):
-    def __init__(self, num_node_features, nout_gat, nhid_gat, graph_hidden_channels, num_head_gat, ntoken, num_head_text, nhid_text, nlayers_text, dropout=0.3):
+    def __init__(self, num_node_features, nhid_gat, graph_hidden_channels, num_head_gat, ntoken, num_head_text, nhid_text, nlayers_text, dropout=0.3):
         super(Model, self).__init__()
-        self.graph_encoder = GraphEncoder(num_node_features, nout_gat, nhid_gat, graph_hidden_channels, num_head_gat)
+        self.graph_encoder = GraphEncoder(num_node_features, nhid_text, nhid_gat, graph_hidden_channels, num_head_gat)
         self.text_encoder = TextEncoder(ntoken, num_head_text, nhid_text, nlayers_text, dropout)
         
-    def forward(self, graph_batch, input_ids, attention_mask):
+    def forward(self, graph_batch, input_ids, attention_mask, src_key_padding_mask = None):
         graph_encoded = self.graph_encoder(graph_batch)
-        text_encoded = self.text_encoder(input_ids, attention_mask)
+        text_encoded = self.text_encoder(input_ids, attention_mask, src_key_padding_mask)
         return graph_encoded, text_encoded
     
     def get_text_encoder(self):
