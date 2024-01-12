@@ -94,7 +94,7 @@ class TextEncoder(nn.Module):
         src = self.pos_encoder(src)
         src = self.transformer_encoder(src, src_mask, src_key_padding_mask = src_key_padding_mask)
         attention_weights = F.softmax(src, dim=1)  # Apply softmax along sentence_length dimension
-        output = torch.max(attention_weights * src, dim=1)
+        output = torch.max(attention_weights * src, dim=1)[0]
         return output
 
 class Model(nn.Module):
