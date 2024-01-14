@@ -76,7 +76,7 @@ class TextEncoder(nn.Module):
         self.nhid = nhid
         self.init_weights()
 
-        self.weighted_mean = nn.Parameter(torch.ones(256))
+        self.weighted_mean = nn.Parameter(torch.ones(256)/256)
         
     def generate_square_subsequent_mask(self, sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
