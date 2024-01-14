@@ -75,6 +75,8 @@ class TextEncoder(nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, nlayers)
         self.nhid = nhid
         self.init_weights()
+
+        self.weighted_mean = nn.Parameter(torch.ones(256))
         
     def generate_square_subsequent_mask(self, sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
@@ -90,11 +92,15 @@ class TextEncoder(nn.Module):
         self.encoder.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src, src_mask = None, src_key_padding_mask = None):
+        
         src = self.encoder(src) * math.sqrt(self.nhid)
         src = self.pos_encoder(src)
         src = self.transformer_encoder(src, src_mask, src_key_padding_mask = src_key_padding_mask)
         attention_weights = F.softmax(src, dim=1)  # Apply softmax along sentence_length dimension
-        output = torch.max(attention_weights * src, dim=1)[0]
+
+        src = src.transpose(1, 2)
+        output = src @ self.weighted_mean
+
         return output
 
 class Model(nn.Module):
