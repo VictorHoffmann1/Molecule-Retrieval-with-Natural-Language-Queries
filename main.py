@@ -22,16 +22,16 @@ gt = np.load("./data/token_embedding_dict.npy", allow_pickle=True)[()]
 val_dataset = GraphTextDataset(root='./data/', gt=gt, split='val', tokenizer=tokenizer)
 train_dataset = GraphTextDataset(root='./data/', gt=gt, split='train', tokenizer=tokenizer)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "mps:0" if torch.backends.mps.is_available() else "cpu" )
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu" )
 
 nb_epochs = 40
 batch_size = 32
-learning_rate = 2e-5
+learning_rate = 20e-5
 
 val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-model = Model(num_node_features=300, nhid_gat=300, graph_hidden_channels=300, num_head_gat=8, ntoken=tokenizer.vocab_size, num_head_text=8, nhid_text=512, nlayers_text=8, dropout=0.3)
+model = Model(num_node_features=300, nhid_gat=300, graph_hidden_channels=64, num_head_gat=4, ntoken=tokenizer.vocab_size, num_head_text=8, nhid_text=512, nlayers_text=8, dropout=0.3)
 model.to(device)
 
 optimizer = optim.AdamW(model.parameters(), lr=learning_rate,
