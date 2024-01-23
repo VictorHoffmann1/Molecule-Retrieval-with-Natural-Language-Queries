@@ -17,6 +17,7 @@ class GraphTextDataset(Dataset):
         self.cids = list(self.description[1].keys())
         self.data_cache = {}  # Dictionary to store loaded data
         self.idx_to_cid = {}
+
         i = 0
         for cid in self.cids:
             self.idx_to_cid[i] = cid
@@ -62,11 +63,18 @@ class GraphTextDataset(Dataset):
             x.append(self.gt['UNK'])
         return torch.LongTensor(edge_index).T, torch.FloatTensor(x)
 
+    
     def process(self):
+        # List of common words
+        common_words = set(word.lower() for word in nltk.corpus.words.words())
+
         i = 0        
         for raw_path in self.raw_paths:
             cid = int(raw_path.split('/')[-1][:-6])
-            text_input = self.tokenizer([self.description[1][cid]],
+
+            description = self.description[1][cid]
+
+            text_input = self.tokenizer([description],
                                    return_tensors="pt", 
                                    truncation=True, 
                                    max_length=256,
@@ -76,7 +84,7 @@ class GraphTextDataset(Dataset):
             data = Data(x=x, edge_index=edge_index, input_ids=text_input['input_ids'], attention_mask=text_input['attention_mask'])
             torch.save(data, osp.join(self.processed_dir, 'data_{}.pt'.format(cid)))
             i += 1
-
+ 
     def len(self):
         return len(self.cids)
 

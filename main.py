@@ -1,14 +1,16 @@
 from dataloader import GraphTextDataset, GraphDataset, TextDataset
 from torch_geometric.data import DataLoader
 from torch.utils.data import DataLoader as TorchDataLoader
-from Model import Model
+from Model import Model, TextEncoder
 import numpy as np
 import torch
+from torch import nn
 from torch import optim
 import time
 import os
 import pandas as pd
-from transformers import AutoTokenizer
+from tqdm import tqdm
+from transformers import AutoTokenizer, AutoModel
 
 CE = torch.nn.CrossEntropyLoss()
 def contrastive_loss(v1, v2):
@@ -16,27 +18,36 @@ def contrastive_loss(v1, v2):
   labels = torch.arange(logits.shape[0], device=v1.device)
   return CE(logits, labels) + CE(torch.transpose(logits, 0, 1), labels)
 
-tokenizer_name = 'alvaroalon2/biobert_chemical_ner'
+tokenizer_name = "emilyalsentzer/Bio_ClinicalBERT"
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 gt = np.load("./data/token_embedding_dict.npy", allow_pickle=True)[()]
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 val_dataset = GraphTextDataset(root='./data/', gt=gt, split='val', tokenizer=tokenizer)
 train_dataset = GraphTextDataset(root='./data/', gt=gt, split='train', tokenizer=tokenizer)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-nb_epochs = 40
+nb_epochs = 70
 batch_size = 32
-learning_rate = 2e-5
+learning_rate = 5e-5
 
 val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-model = Model(num_node_features=300, nhid_gat=300, graph_hidden_channels=300, num_head_gat=8, ntoken=tokenizer.vocab_size, num_head_text=8, nhid_text=512, nlayers_text=8, dropout=0.3)
+model = Model(num_node_features=300, nhid_gat=300, num_head_gat = 4)
 model.to(device)
 
 optimizer = optim.AdamW(model.parameters(), lr=learning_rate,
                                 betas=(0.9, 0.999),
-                                weight_decay=0.01)
+                                weight_decay=0.05)
+
+epoch = 0
+loss = 0
+losses = []
+count_iter = 0
+time1 = time.time()
+printEvery = 50
+best_validation_loss = 1000000
 
 epoch = 0
 loss = 0
@@ -52,13 +63,13 @@ for i in range(nb_epochs):
     for batch in train_loader:
         input_ids = batch.input_ids
         batch.pop('input_ids')
+        attention_mask = batch.attention_mask
         batch.pop('attention_mask')
-        attn_mask = model.text_encoder.generate_square_subsequent_mask(input_ids.size(0)).to(device)
         graph_batch = batch
 
         x_graph, x_text = model(graph_batch.to(device),
                                 input_ids.to(device),
-                                attn_mask.to(device))
+                               attention_mask.to(device))
         current_loss = contrastive_loss(x_graph, x_text)
         optimizer.zero_grad()
         current_loss.backward()
@@ -77,19 +88,19 @@ for i in range(nb_epochs):
     for batch in val_loader:
         input_ids = batch.input_ids
         batch.pop('input_ids')
-        attn_mask = model.text_encoder.generate_square_subsequent_mask(input_ids.size(0)).to(device)
+        attention_mask = batch.attention_mask
         batch.pop('attention_mask')
         graph_batch = batch
-        x_graph, x_text = model(graph_batch.to(device), 
-                                input_ids.to(device), 
-                                attn_mask.to(device))
+        x_graph, x_text = model(graph_batch.to(device),
+                                input_ids.to(device),
+                               attention_mask.to(device))
         current_loss = contrastive_loss(x_graph, x_text)   
         val_loss += current_loss.item()
     best_validation_loss = min(best_validation_loss, val_loss)
     print('-----EPOCH'+str(i+1)+'----- done.  Validation loss: ', str(val_loss/len(val_loader)) )
     if best_validation_loss==val_loss:
-        print('validation loss improoved saving checkpoint...')
-        save_path = os.path.join('./', 'model'+str(i)+'.pt')
+        print('validation loss improved saving checkpoint...')
+        save_path = os.path.join('./', 'model.pt')
         torch.save({
         'epoch': i,
         'model_state_dict': model.state_dict(),
@@ -98,7 +109,6 @@ for i in range(nb_epochs):
         'loss': loss,
         }, save_path)
         print('checkpoint saved to: {}'.format(save_path))
-
 
 print('loading best model...')
 checkpoint = torch.load(save_path)
