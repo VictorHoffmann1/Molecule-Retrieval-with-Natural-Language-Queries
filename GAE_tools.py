@@ -78,7 +78,6 @@ def fusion(graph_batch, k, beta):
     
 
     A_F = beta * A + (1-beta)*A_K_reshape
-    print("A_F :",A_F.shape)
 
     edge_indices = []
     edge_attrs = []

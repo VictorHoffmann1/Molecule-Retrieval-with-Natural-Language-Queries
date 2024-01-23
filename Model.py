@@ -3,7 +3,10 @@ from torch import nn
 import torch.nn.functional as F
 from torch_geometric.nn import GATConv
 from torch_geometric.nn import global_mean_pool
+import torch_geometric
 import math
+
+from GAE_tools import fusion
 
 class GraphEncoder(nn.Module):
     def __init__(self, num_node_features, nout, nhid, graph_hidden_channels, num_heads):
@@ -110,7 +113,12 @@ class Model(nn.Module):
         self.text_encoder = TextEncoder(ntoken, num_head_text, nhid_text, nlayers_text, dropout)
         
     def forward(self, graph_batch, input_ids, attention_mask, src_key_padding_mask = None):
-        graph_encoded = self.graph_encoder(graph_batch)
+        # Fusion step
+        similarity_matrix, (edge_index, edge_attr) = fusion(graph_batch, k = 5, beta = 0.6)
+        graphFusion_batch = torch_geometric.data.Data(x = graph_batch.x, edge_index = edge_index, edge_attr = edge_attr, batch = graph_batch.batch)
+
+        # Classical graph encoder
+        graph_encoded = self.graph_encoder(graphFusion_batch)
         text_encoded = self.text_encoder(input_ids, attention_mask, src_key_padding_mask)
         return graph_encoded, text_encoded
     
