@@ -65,9 +65,6 @@ class GraphTextDataset(Dataset):
 
     
     def process(self):
-        # List of common words
-        common_words = set(word.lower() for word in nltk.corpus.words.words())
-
         i = 0        
         for raw_path in self.raw_paths:
             cid = int(raw_path.split('/')[-1][:-6])
