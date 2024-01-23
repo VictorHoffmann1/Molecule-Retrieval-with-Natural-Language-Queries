@@ -40,6 +40,7 @@ def fusion(graph_batch, k, beta):
      - fusion_graph : torch_geometric.Data object representing A_F
                     with attributes x, edge_index, edge_attr, batch
     """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu" )
 
     x = graph_batch.x
     edge_index = graph_batch.edge_index
@@ -54,17 +55,17 @@ def fusion(graph_batch, k, beta):
     # Step : knn graph
     _,nearest_neighbors = torch.topk(similarity_matrix, dim=1, largest=True, k=k+1)
     mask = (nearest_neighbors.unsqueeze(1) == nearest_neighbors.unsqueeze(0)).any(dim=-1).to(torch.int)
-    mask = mask - torch.eye(n, dtype=torch.int)
+    mask = mask - torch.eye(n, dtype=torch.int, device = device)
     A_K = mask * similarity_matrix
 
 
     # passage de A_K (N,N) à (32,n_max,n_max)
     batch_size = batch.max().item() + 1
     n_max = A.shape[1]
-    A_K_reshape = torch.zeros(batch_size, n_max, n_max)
+    A_K_reshape = torch.zeros(batch_size, n_max, n_max, device = device)
 
     for batch_num in range(batch_size):
-        batch_ind = torch.where(batch == batch_num*torch.ones(n))[0]
+        batch_ind = torch.where(batch == batch_num*torch.ones(n, device = device))[0]
 
         begin = batch_ind.min().item()
         end = batch_ind.max().item()
