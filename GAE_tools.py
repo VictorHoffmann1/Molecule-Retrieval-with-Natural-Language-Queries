@@ -2,7 +2,9 @@ import torch
 import torch_geometric
 from torch_geometric.nn import global_mean_pool
 from torch.nn.functional import cosine_similarity # pdist
+from torch import nn
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu" )
 
 def batched_pairwise_cosine_similarity(x):
     return cosine_similarity(x.unsqueeze(1), x.unsqueeze(0), dim=2)
@@ -97,3 +99,49 @@ def fusion(graph_batch, k, beta):
     return similarity_matrix, (final_edge_index, final_edge_attr)
 
 
+
+class GraphDecoder(nn.Module):
+
+    def __init__(self, ):
+        super(GraphDecoder, self).__init__()
+
+    def forward(self,Z, batch):
+        """
+        Z : (Total number of nodes, ...)
+        batch : (number of nodes) indique dans quel batch le noeud appartient
+
+        """
+
+        obj = torch_geometric.data.Data(x = Z, batch = batch)
+
+        A = torch.sigmoid(Z @ Z.T)
+        similarity_matrix = batched_similarity_matrix(obj)
+
+        return A, similarity_matrix
+
+def reconstructive_loss(A, batch, similarity_matrix, A_decoded, similarity_matrix_decoded, lambda_):
+    """
+    reconstructive loss (convex combination of structural and similarity loss) between
+    - original graph : A, batch, similarity_matrix
+    - decoded graph : A_decoded, similarity_matrix_decoded
+    """
+
+    strutural_loss = 0
+    for batch_num in range(batch.batch.max().item()+1):
+        batch_ind = torch.where(batch.batch == batch_num*torch.ones(batch.batch.shape[0], device = device))[0]
+        begin = batch_ind.min().item()
+        end = batch_ind.max().item()
+        current_n_node = end + 1 - begin
+
+        A_current_graph = A[batch_num,:current_n_node,:current_n_node]
+        A_decoded_current_graph = A_decoded[begin:end+1 , begin:end+1]
+
+        strutural_loss -= torch.mean(A_current_graph * torch.log(A_decoded_current_graph) + \
+            (torch.ones(current_n_node)- A_current_graph) * torch.log(torch.ones(current_n_node)-A_decoded_current_graph))
+
+
+    similarity_loss = torch.norm(similarity_matrix - similarity_matrix_decoded, p = 'fro')
+
+    current_loss = lambda_ * strutural_loss + (1-lambda_) * similarity_loss
+
+    return current_loss, strutural_loss, similarity_loss
