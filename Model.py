@@ -24,7 +24,7 @@ class GraphEncoder(nn.Module):
         self.mol_hidden1 = nn.Linear(graph_hidden_channels * num_heads, nhid)
         self.mol_hidden2 = nn.Linear(nhid, nout)
 
-    def forward(self, graph_batch):
+    def forward(self, graph_batch, graph_pretraining = False):
         x = graph_batch.x
         edge_index = graph_batch.edge_index
         batch = graph_batch.batch
@@ -34,11 +34,15 @@ class GraphEncoder(nn.Module):
         x = x.relu()
         x = self.conv2(x, edge_index)
         x = x.relu()
-        x = self.conv3(x, edge_index)
+        x = self.conv3(x, edge_index) #Z
+
+        if graph_pretraining:
+            return x
 
         x = global_mean_pool(x, batch)
         x = self.mol_hidden1(x).relu()
         x = self.mol_hidden2(x)
+
         return x
     
 class PositionalEncoding(nn.Module):
@@ -107,14 +111,17 @@ class TextEncoder(nn.Module):
         return output
 
 class Model(nn.Module):
-    def __init__(self, num_node_features, nhid_gat, graph_hidden_channels, num_head_gat, ntoken, num_head_text, nhid_text, nlayers_text, dropout=0.3):
+    def __init__(self, num_node_features, nhid_gat, graph_hidden_channels, num_head_gat, ntoken, num_head_text, nhid_text, nlayers_text, fusion_k, fusion_beta, dropout=0.3):
         super(Model, self).__init__()
         self.graph_encoder = GraphEncoder(num_node_features, nhid_text, nhid_gat, graph_hidden_channels, num_head_gat)
         self.text_encoder = TextEncoder(ntoken, num_head_text, nhid_text, nlayers_text, dropout)
+
+        self.fusion_k = fusion_k
+        self.fusion_beta = fusion_beta
         
     def forward(self, graph_batch, input_ids, attention_mask, src_key_padding_mask = None):
         # Fusion step
-        similarity_matrix, (edge_index, edge_attr) = fusion(graph_batch, k = 5, beta = 0.6)
+        similarity_matrix, (edge_index, edge_attr) = fusion(graph_batch, k = self.fusion_k, beta = self.fusion_beta)
         graphFusion_batch = torch_geometric.data.Data(x = graph_batch.x, edge_index = edge_index, edge_attr = edge_attr, batch = graph_batch.batch)
 
         # Classical graph encoder
@@ -126,4 +133,13 @@ class Model(nn.Module):
         return self.text_encoder
     
     def get_graph_encoder(self):
-        return self.graph_encoder
+        def fusion_and_encoder(graph_batch, graph_pretraining):
+            #Fusion step
+            similarity_matrix, (edge_index, edge_attr) = fusion(graph_batch, k = self.fusion_k, beta = self.fusion_beta)
+            graphFusion_batch = torch_geometric.data.Data(x = graph_batch.x, edge_index = edge_index, edge_attr = edge_attr, batch = graph_batch.batch)
+
+            # Classical graph encoder
+            graph_encoded = self.graph_encoder(graphFusion_batch, graph_pretraining)
+            return graph_encoded
+
+        return fusion_and_encoder
