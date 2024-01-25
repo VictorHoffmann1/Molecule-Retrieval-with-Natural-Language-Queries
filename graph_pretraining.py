@@ -62,7 +62,7 @@ time1 = time.time()
 printEvery = 50
 best_validation_loss = 1000000
 
-
+criterion = reconstructive_loss(lambda_)
 
 for i in range(nb_epochs):
     print('-----EPOCH{}-----'.format(i+1))
@@ -79,12 +79,13 @@ for i in range(nb_epochs):
 
         A = torch_geometric.utils.to_dense_adj(batch.edge_index, batch = batch.batch)
 
-        current_loss,_,_ = reconstructive_loss(A,batch,similarity_matrix,A_decoded,similarity_matrix_decoded,lambda_)
+        current_loss,_,_ = criterion(A,batch,similarity_matrix,A_decoded,similarity_matrix_decoded)
 
         optimizer.zero_grad()
         current_loss.backward()
         optimizer.step()
         loss += current_loss.item()
+        torch.cuda.empty_cache()
 
         count_iter += 1
         if count_iter % printEvery == 0:
