@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from torch_geometric.nn import GATConv
+from torch_geometric.nn import GCNConv
 from torch_geometric.nn import global_mean_pool
 import torch_geometric
 import math
@@ -16,12 +16,14 @@ class GraphEncoder(nn.Module):
         self.relu = nn.ReLU()
         self.ln = nn.LayerNorm((nout))
         
-        # Replace GCNConv with GATConv
-        self.conv1 = GATConv(num_node_features, graph_hidden_channels, heads=num_heads)
-        self.conv2 = GATConv(graph_hidden_channels * num_heads, graph_hidden_channels, heads=num_heads)
-        self.conv3 = GATConv(graph_hidden_channels * num_heads, graph_hidden_channels, heads=num_heads)
+        self.conv1 = GCNConv(num_node_features, graph_hidden_channels)
+        self.conv2 = GCNConv(graph_hidden_channels, graph_hidden_channels)
+        self.conv3 = GCNConv(graph_hidden_channels, graph_hidden_channels)
+        self.conv4 = GCNConv(graph_hidden_channels, graph_hidden_channels)
+        self.conv5 = GCNConv(graph_hidden_channels, graph_hidden_channels)
+        self.conv6 = GCNConv(graph_hidden_channels, graph_hidden_channels)
         
-        self.mol_hidden1 = nn.Linear(graph_hidden_channels * num_heads, nhid)
+        self.mol_hidden1 = nn.Linear(graph_hidden_channels, nhid)
         self.mol_hidden2 = nn.Linear(nhid, nout)
 
     def forward(self, graph_batch, graph_pretraining = False):
@@ -34,7 +36,14 @@ class GraphEncoder(nn.Module):
         x = x.relu()
         x = self.conv2(x, edge_index)
         x = x.relu()
-        x = self.conv3(x, edge_index) #Z
+        x = self.conv3(x, edge_index)
+        x = x.relu()
+        x = self.conv4(x, edge_index)
+        x = x.relu()
+        x = self.conv5(x, edge_index)
+        x = x.relu()
+        x = self.conv6(x, edge_index)
+        x = x.relu()
 
         if graph_pretraining:
             return x
