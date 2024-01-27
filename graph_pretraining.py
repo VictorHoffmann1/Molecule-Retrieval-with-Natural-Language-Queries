@@ -41,7 +41,7 @@ train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 learning_rate = 2e-5
 
 fusion_beta = 0.8
-fusion_k = 5
+fusion_k = 10
 
 model = Model(num_node_features=300, nhid_gat=300, graph_hidden_channels=300, num_head_gat=4, 
     ntoken=tokenizer.vocab_size, num_head_text=8, nhid_text=512, nlayers_text=8, dropout=0.3,
@@ -57,7 +57,8 @@ nbr_param = 0
 for p in model.graph_encoder.parameters():
     p.requires_grad = True
     nbr_param += torch.sum(torch.ones(p.shape))
-#print("Parameters in graph_ender: ",nbr_param)
+
+print("Parameters in graph_encoder: ",nbr_param)
 
 
 optimizer = optim.AdamW(model.graph_encoder.parameters(), lr=learning_rate,
@@ -112,9 +113,9 @@ for i in range(nb_epochs):
             time2 = time.time()
             print("Iteration: {0}, Time: {1:.4f} s, training loss: {2:.4f}".format(count_iter, time2 - time1, loss/printEvery))
             losses.append(loss)
-            losses_list[0].append(loss)
-            losses_list[1].append(structural_loss)
-            losses_list[2].append(similarity_loss)
+            losses_list[0].append(loss/printEvery)
+            losses_list[1].append(structural_loss/printEvery)
+            losses_list[2].append(similarity_loss/printEvery)
 
             loss = 0
             structural_loss = 0
