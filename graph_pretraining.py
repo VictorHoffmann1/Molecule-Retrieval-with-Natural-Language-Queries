@@ -9,6 +9,7 @@ import time
 import os
 import pandas as pd
 from transformers import AutoTokenizer
+import matplotlib.pyplot as plt
 
 from torch import nn
 import torch_geometric
@@ -39,14 +40,25 @@ train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 ### Instanciation des modèles ###
 learning_rate = 2e-5
 
+fusion_beta = 0.8
+fusion_k = 5
 
-model = Model(num_node_features=300, nhid_gat=300, graph_hidden_channels=300, num_head_gat=8, 
+model = Model(num_node_features=300, nhid_gat=300, graph_hidden_channels=300, num_head_gat=4, 
     ntoken=tokenizer.vocab_size, num_head_text=8, nhid_text=512, nlayers_text=8, dropout=0.3,
-    fusion_k = 5, fusion_beta = 1)
+    fusion_k = fusion_k, fusion_beta = fusion_beta)
 model.to(device)
 
-graph_encoder = model.get_graph_encoder()
 graph_decoder = GraphDecoder()
+
+# gradient fix
+for p in model.parameters():
+     p.requires_grad = False
+nbr_param = 0
+for p in model.graph_encoder.parameters():
+    p.requires_grad = True
+    nbr_param += torch.sum(torch.ones(p.shape))
+#print("Parameters in graph_ender: ",nbr_param)
+
 
 optimizer = optim.AdamW(model.graph_encoder.parameters(), lr=learning_rate,
                                 betas=(0.9, 0.999),
@@ -56,6 +68,8 @@ nb_epochs = 40
 
 lambda_ = 0.5
 loss = 0
+structural_loss = 0
+similarity_loss = 0
 losses = []
 count_iter = 0
 time1 = time.time()
@@ -64,22 +78,25 @@ best_validation_loss = 1000000
 
 criterion = reconstructive_loss(lambda_)
 
+losses_list = list((list(),list(),list())) # 0) loss, 1) structural loss, 2) similarity loss
+
 for i in range(nb_epochs):
     print('-----EPOCH{}-----'.format(i+1))
     model.train()
 
     for batch in train_loader:
-        input_ids = batch.input_ids
+        batch.pop('input_ids')
+        batch.pop('attention_mask')
 
-        similarity_matrix, (edge_index, edge_attr) = fusion(batch.to(device), k = 1, beta=0.2)
+        similarity_matrix, (edge_index, edge_attr) = fusion(batch.to(device), k = fusion_k, beta=fusion_beta)
         graphFusion_batch = torch_geometric.data.Data(x = batch.x, edge_index = edge_index, edge_attr = edge_attr, batch = batch.batch)
 
-        Z = graph_encoder(graphFusion_batch, graph_pretraining = True)
+        Z = model.graph_encoder(graphFusion_batch, graph_pretraining = True)
         A_decoded, similarity_matrix_decoded = graph_decoder(Z, batch.batch)
 
         A = torch_geometric.utils.to_dense_adj(batch.edge_index, batch = batch.batch)
 
-        current_loss,_,_ = criterion(A,batch,similarity_matrix,A_decoded,similarity_matrix_decoded)
+        current_loss, current_structural_loss, current_similarity_loss = criterion(A, batch, similarity_matrix, A_decoded, similarity_matrix_decoded)
 
         optimizer.zero_grad()
         current_loss.backward()
@@ -87,12 +104,21 @@ for i in range(nb_epochs):
         loss += current_loss.item()
         torch.cuda.empty_cache()
 
+        structural_loss += current_structural_loss.item()
+        similarity_loss += current_similarity_loss.item()
+
         count_iter += 1
         if count_iter % printEvery == 0:
             time2 = time.time()
             print("Iteration: {0}, Time: {1:.4f} s, training loss: {2:.4f}".format(count_iter, time2 - time1, loss/printEvery))
             losses.append(loss)
-            loss = 0 
+            losses_list[0].append(loss)
+            losses_list[1].append(structural_loss)
+            losses_list[2].append(similarity_loss)
+
+            loss = 0
+            structural_loss = 0
+            similarity_loss = 0
 
 
     model.eval()
@@ -102,15 +128,15 @@ for i in range(nb_epochs):
         batch.pop('attention_mask')
 
 
-        similarity_matrix, (edge_index, edge_attr) = fusion(batch.to(device), k = 1, beta=0.2)
+        similarity_matrix, (edge_index, edge_attr) = fusion(batch.to(device), k = fusion_k, beta=fusion_beta)
         graphFusion_batch = torch_geometric.data.Data(x = batch.x, edge_index = edge_index, edge_attr = edge_attr, batch = batch.batch)
 
-        Z = graph_encoder(graphFusion_batch, graph_pretraining = True)
+        Z = model.graph_encoder(graphFusion_batch, graph_pretraining = True)
         A_decoded, similarity_matrix_decoded = graph_decoder(Z, batch.batch)
 
         A = torch_geometric.utils.to_dense_adj(batch.edge_index, batch = batch.batch)
 
-        current_loss, _, _ = reconstructive_loss(A,batch,similarity_matrix,A_decoded,similarity_matrix_decoded,lambda_)
+        current_loss, _, _ = criterion(A, batch, similarity_matrix, A_decoded, similarity_matrix_decoded)
 
         val_loss += current_loss.item()
 
@@ -118,6 +144,16 @@ for i in range(nb_epochs):
     best_validation_loss = min(best_validation_loss, val_loss)
     
     print('-----EPOCH'+str(i+1)+'----- done.  Validation loss: ', str(val_loss/len(val_loader)) )
+    plt.figure()
+    plt.plot(losses_list[0], label = "Loss")
+    plt.plot(losses_list[1], label = "Structural loss")
+    plt.plot(losses_list[2], label = "Similarity loss")
+    plt.xlabel("Iteration (point every 50 iterations)")
+    plt.ylabel("Values")
+    plt.title(" Training losses")
+    plt.legend()
+    plt.show()
+
 
     if best_validation_loss==val_loss:
         print('validation loss improved saving checkpoint...')
