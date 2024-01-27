@@ -28,14 +28,23 @@ nb_epochs = 1
 batch_size = 32
 learning_rate = 2e-5
 
+fusion_beta = 0.8
+fusion_k = 10
+
 val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-model = Model(num_node_features=300, nhid_gat=300, graph_hidden_channels=300, num_head_gat=8, 
+model = Model(num_node_features=300, nhid_gat=300, graph_hidden_channels=300, num_head_gat=4, 
     ntoken=tokenizer.vocab_size, num_head_text=8, nhid_text=512, nlayers_text=8, dropout=0.3,
-    fusion_k = 5, fusion_beta = 1)
+    fusion_k = fusion_k , fusion_beta = fusion_beta)
 
+save_path = "./graph_pretrained_model32.pt"
+checkpoint = torch.load(save_path)
+model.load_state_dict(checkpoint['model_state_dict'])
 model.to(device)
+
+for p in model.parameters():
+     p.requires_grad = True
 
 optimizer = optim.AdamW(model.parameters(), lr=learning_rate,
                                 betas=(0.9, 0.999),
