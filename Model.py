@@ -12,9 +12,8 @@ class GraphEncoder(nn.Module):
         self.nhid = nhid
         self.nout = nout
         self.heads = heads
-        self.relu = nn.LeakyReLU()
+        self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=0.1)
-        self.ln = nn.LayerNorm((nout))
 
         # Define the GAT layers
         self.conv1 = GATConv(num_node_features, nhid, heads=self.heads)
@@ -37,13 +36,12 @@ class GraphEncoder(nn.Module):
         x = self.dropout(x)
         x = self.conv3(x, edge_index)
         x = self.relu(x)
-        x = self.dropout(x)       
+        x = self.dropout(x)   
 
         x = global_mean_pool(x, batch)
         x = self.mol_hidden1(x).relu()
         x = self.mol_hidden2(x)
         return x
-
 
 
 class TextEncoder(nn.Module):
@@ -57,6 +55,7 @@ class TextEncoder(nn.Module):
         self.nhid = self.encoder.config.hidden_size
         encoder_layers = nn.TransformerEncoderLayer(self.nhid, 4, dropout = 0.3, dim_feedforward = self.nhid)
         self.intermediate = nn.TransformerEncoder(encoder_layers, 2)
+
         # Define MLP for learning weights
         self.mlp = nn.Sequential(
             nn.Linear(self.nhid, self.nhid),
@@ -64,11 +63,11 @@ class TextEncoder(nn.Module):
             nn.Linear(self.nhid, 1),
             nn.Softmax(dim=1)
         )
-        
+
         # Freeze the encoder parameters
         for param in self.encoder.parameters():
             param.requires_grad = False
-        
+
     def forward(self, src, padding_mask):
         # Pass input through BERT model
         src = self.encoder(src, attention_mask = padding_mask)
@@ -84,12 +83,12 @@ class TextEncoder(nn.Module):
     
 
 class Model(nn.Module):
-    
+
     def __init__(self, num_node_features, nhid_gat, num_head_gat):
         super(Model, self).__init__()
         self.text_encoder = TextEncoder()
         self.graph_encoder = GraphEncoder(num_node_features, self.text_encoder.nhid, nhid_gat, num_head_gat)
-        
+
     def forward(self, graph_batch, input_ids, attention_mask):
         graph_encoded = self.graph_encoder(graph_batch)
         text_encoded = self.text_encoder(input_ids, attention_mask)
