@@ -22,6 +22,10 @@ class GraphEncoder(nn.Module):
         self.mol_hidden1 = nn.Linear(nhid * self.heads, nhid)
         self.mol_hidden2 = nn.Linear(nhid, nout)
 
+        #Initialize with the pretrained weights
+        #checkpoint = torch.load('GraphEncoder_50epochs.pt')
+        #self.load_state_dict(checkpoint)
+
     def forward(self, graph_batch):
         x = graph_batch.x
         edge_index = graph_batch.edge_index
