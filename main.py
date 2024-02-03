@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch import optim
+from torch.optim.lr_scheduler import CosineAnnealingLR
 import time
 import os
 import pandas as pd
@@ -27,9 +28,9 @@ train_dataset = GraphTextDataset(root='./data/', gt=gt, split='train', tokenizer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-nb_epochs = 70
+nb_epochs = 80
 batch_size = 32
-learning_rate = 5e-5
+learning_rate = 3e-4
 
 val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -41,13 +42,7 @@ optimizer = optim.AdamW(model.parameters(), lr=learning_rate,
                                 betas=(0.9, 0.999),
                                 weight_decay=0.05)
 
-epoch = 0
-loss = 0
-losses = []
-count_iter = 0
-time1 = time.time()
-printEvery = 50
-best_validation_loss = 1000000
+scheduler = CosineAnnealingLR(optimizer, T_max=nb_epochs, eta_min=3e-6)
 
 epoch = 0
 loss = 0
@@ -75,6 +70,7 @@ for i in range(nb_epochs):
         current_loss.backward()
         optimizer.step()
         loss += current_loss.item()
+        scheduler.step()
 
         count_iter += 1
         if count_iter % printEvery == 0:
